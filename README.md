@@ -1,19 +1,25 @@
 # Geospatial File Measurement API
 
-This project implements a production-minded FastAPI backend for uploading and measuring geospatial features from KML files and Shapefile ZIP archives. It demonstrates secure upload handling, geospatial parsing, CRS-aware measurement logic, SQLite persistence, and clean service-oriented design.
+This project is a FastAPI backend for processing and measuring geospatial vector files uploaded by clients. It accepts KML files and ZIP archives containing Shapefiles, stores metadata in SQLite, and calculates supported geometry measurements in metric units.
+
+## Project Overview
+
+The API was built to demonstrate production-oriented backend engineering for geospatial data processing. The use case is a technical assignment for an internship-level software development engineer role, with emphasis on file validation, clean architecture, CRS handling, geometry measurement, REST APIs, and testing discipline.
 
 ## Features
 
-- Supports `.kml` and `.zip` containing shapefiles
-- Validates upload size and structure
-- Extracts and validates shapefile archives (`.shp`, `.shx`, `.dbf`)
-- Reads vector data with GeoPandas and Shapely
-- Detects CRS metadata graciously
-- Reprojects to a local projected CRS before distance/area calculations
-- Measures polygons as area in square metres and lines as length in metres
-- Returns unsupported geometry results without crashing
-- Stores metadata in SQLite using SQLAlchemy
-- Provides Swagger docs at `/docs`
+- Accepts `.kml` uploads and `.zip` files that contain a Shapefile
+- Validates extension, size, and archive structure
+- Safely stores uploaded files in the local uploads directory
+- Extracts ZIP archives without path traversal risks
+- Reads GeoJSON/KML/Shapefile data using GeoPandas
+- Detects source CRS and reprojects to a local projected CRS for accurate measurement
+- Measures polygons as area in square metres
+- Measures lines as length in metres
+- Returns point features without a metric measurement
+- Returns explicit unsupported-geometry results instead of crashing
+- Persists uploaded file metadata to SQLite with SQLAlchemy
+- Exposes Swagger docs through FastAPI
 
 ## Tech Stack
 
@@ -33,27 +39,39 @@ This project implements a production-minded FastAPI backend for uploading and me
 ## Project Structure
 
 ```text
-app/
-  api/
-    files.py
-  models/
-    file.py
-  schemas/
-    file.py
-  services/
-    crs_service.py
-    file_processor.py
-    geometry_service.py
-  config.py
-  database.py
-  main.py
-uploads/
-temp/
-tests/
-requirements.txt
-Dockerfile
-docker-compose.yml
-README.md
+geospatial-file-measurement-api/
+├── app/
+│   ├── __init__.py
+│   ├── config.py
+│   ├── database.py
+│   ├── main.py
+│   ├── api/
+│   │   ├── __init__.py
+│   │   └── files.py
+│   ├── models/
+│   │   ├── __init__.py
+│   │   └── file.py
+│   ├── schemas/
+│   │   └── file.py
+│   └── services/
+│       ├── __init__.py
+│       ├── crs_service.py
+│       ├── file_processor.py
+│       └── geometry_service.py
+├── tests/
+│   ├── test_upload.py
+│   ├── test_file_info.py
+│   ├── test_measurements.py
+│   ├── test_crs.py
+│   └── test_validation.py
+├── uploads/
+├── temp/
+├── .gitignore
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+├── README.md
+└── geospatial.db
 ```
 
 ## Setup
@@ -72,15 +90,19 @@ uvicorn app.main:app --reload
 
 ## API Documentation
 
-Open Swagger UI at `http://127.0.0.1:8000/docs` to browse available API endpoints and example payloads.
+The application automatically provides Swagger docs at:
 
-## Endpoints
+```text
+http://127.0.0.1:8000/docs
+```
+
+## API Endpoints
 
 ### POST /api/files/
 
-Upload a KML or Shapefile ZIP and receive a summary response.
+Uploads a KML file or zip archive containing a shapefile.
 
-Example request:
+Example:
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/files/" -F "file=@survey.kml"
@@ -100,11 +122,39 @@ Example response:
 
 ### GET /api/files/{id}/
 
-Fetch metadata for a previously uploaded file.
+Returns file metadata.
 
 ### GET /api/files/{id}/measurements/
 
-Return per-feature measurement payloads.
+Returns per-feature measurement data.
+
+Example response:
+
+```json
+{
+  "file_id": "abc123",
+  "features": [
+    {
+      "feature_id": 0,
+      "geometry_type": "Polygon",
+      "area": 25430.52,
+      "unit": "m²"
+    },
+    {
+      "feature_id": 1,
+      "geometry_type": "LineString",
+      "length": 1245.73,
+      "unit": "m"
+    },
+    {
+      "feature_id": 2,
+      "geometry_type": "Point",
+      "measurement": null,
+      "unit": null
+    }
+  ]
+}
+```
 
 ## File Processing Flow
 
@@ -112,18 +162,31 @@ Upload → Validation → File Processing → Feature Extraction → CRS Handlin
 
 ## CRS Strategy
 
-Geographic CRS coordinates such as EPSG:4326 use degrees, which cannot be used directly to compute area or distance in metres. The API first detects the input CRS. When the source CRS is geographic, it computes a centroid and chooses a UTM-based projected CRS for the local footprint before calculating all measurements. This keeps the measurement values consistent and returns distances and areas in metres or square metres.
+A projected spatial reference system is required for metric area and distance calculations. Geographic CRS values such as EPSG:4326 use angular units (degrees), so area and distance must never be computed directly from those coordinates. The application therefore:
+
+1. Reads the source CRS from the uploaded file.
+2. Detects whether the CRS is geographic.
+3. Uses a centroid-based UTM selection strategy to choose a local projected CRS in metres.
+4. Reprojects geometry to that CRS before calculating polygon area or line length.
+
+This ensures area and length values are returned in square metres and metres, respectively.
 
 ## Design Decisions
 
-- The file processor handles validation and archive extraction.
-- CRS logic lives in a dedicated service so it can be tested independently.
-- Geometry measurement is isolated from the API layer for maintainability.
-- SQLite is chosen for local development while preserving a SQLAlchemy abstraction that lends itself to future PostgreSQL adoption.
+- File validation and ZIP extraction remain in a dedicated file-processing service instead of route handlers.
+- CRS logic is separated from API logic to keep transformation rules easy to test and explain.
+- Database models use SQLAlchemy so the app can later migrate to PostgreSQL without major architecture changes.
+- Validation and error handling are explicit so invalid uploads fail gracefully.
 
 ## Error Handling
 
-The API returns 400 for invalid uploads, corrupted files, missing shapefile components, or malformed geospatial data. Missing file IDs use 404. Unsupported geometries return a successful payload with `measurement: null` and a message rather than crashing. Internal errors are logged without exposing stack traces to clients.
+The API handles invalid input with clear HTTP status codes:
+
+- 400 for invalid files, malformed data, missing shapefile components, unsupported types, and processing failures
+- 404 for unknown file IDs
+- 422 is left to FastAPI validation where appropriate
+
+Unsupported geometry types are returned as explicit feature entries with `measurement: null` and a message rather than crashing the process.
 
 ## Testing
 
@@ -133,15 +196,40 @@ pytest
 
 ## Future Scope
 
-- PostgreSQL/PostGIS support
+- PostgreSQL/PostGIS
 - Background processing for large files
-- Storage in object storage providers
+- Object storage for uploaded assets
 - Authentication and authorization
 - Additional geometry types
-- Async processing for high throughput
-- Cloud deployment and container orchestration
+- Async file processing
+- Cloud deployment
 
 ## Learning
 
-This project adds practical experience with FastAPI backend design, geospatial file ingestion, CRS concepts, geometry measurement, validation, tests, and production-oriented Python architecture.
+This project builds practical understanding of FastAPI backend development, geospatial file processing, CRS concepts, geometry measurements, API design, testing, and production-oriented Python architecture.
 
+## Docker
+
+```bash
+docker build -t geospatial-file-measurement-api .
+docker run -p 8000:8000 geospatial-file-measurement-api
+```
+
+## Example curl Requests
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/files/" -F "file=@sample.kml"
+curl "http://127.0.0.1:8000/api/files/{id}/"
+curl "http://127.0.0.1:8000/api/files/{id}/measurements/"
+```
+
+## Final Architecture Summary
+
+The backend follows a simple layered design:
+
+- API routes call service modules
+- Services handle file validation and CRS/geometry logic
+- SQLAlchemy models store metadata and processed features
+- SQLite is used for local development and persistence
+
+This keeps the project understandable for a student developer while still respecting production-quality engineering principles.

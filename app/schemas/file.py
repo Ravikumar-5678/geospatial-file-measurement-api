@@ -39,13 +39,13 @@ class FileMeasurementsResponse(BaseModel):
     features: list[FeatureMeasurement]
 
 
-class ErrorResponse(BaseModel):
-    detail: str
-
-
 class FeatureRecord(BaseModel):
     feature_id: int
     geometry_type: str
     geometry: Any
     properties: dict[str, Any] | None = None
     crs: str | None = None
+
+
+class ErrorResponse(BaseModel):
+    detail: str

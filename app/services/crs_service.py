@@ -7,11 +7,12 @@ from pyproj import CRS
 
 
 def choose_projected_crs(gdf: gpd.GeoDataFrame) -> str:
-    """Choose a local projected CRS in metres for area and length calculations."""
+    """Select a projected CRS in metres based on the geometry centroid."""
     if gdf.empty:
-        raise ValueError("Geodataframe is empty.")
+        raise ValueError("The geodataframe is empty.")
+
     if gdf.crs is None:
-        raise ValueError("Missing CRS metadata in the source geospatial file.")
+        raise ValueError("The source file is missing CRS metadata.")
 
     source_crs = CRS.from_user_input(gdf.crs)
     if not source_crs.is_geographic:
@@ -19,23 +20,17 @@ def choose_projected_crs(gdf: gpd.GeoDataFrame) -> str:
 
     centroid = gdf.unary_union.centroid
     if centroid is None or not math.isfinite(centroid.x) or not math.isfinite(centroid.y):
-        raise ValueError("Unable to estimate the geometry centroid for CRS selection.")
+        raise ValueError("Unable to determine a valid centroid for CRS selection.")
 
-    lon = centroid.x
-    lat = centroid.y
-    utm_zone = int((lon + 180) / 6) + 1
-    if lat >= 0:
-        epsg_code = 32600 + utm_zone
-    else:
-        epsg_code = 32700 + utm_zone
-
+    zone = int((centroid.x + 180) / 6) + 1
+    epsg_code = 32600 + zone if centroid.y >= 0 else 32700 + zone
     return f"EPSG:{epsg_code}"
 
 
 def project_for_measurement(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Reproject a geographic GeoDataFrame into a local projected CRS in metres."""
+    """Reproject geographic data into a projected CRS before computing distances and areas."""
     if gdf.crs is None:
-        raise ValueError("Missing CRS metadata in the source geospatial file.")
+        raise ValueError("The source file is missing CRS metadata.")
 
     target_crs = choose_projected_crs(gdf)
     return gdf.to_crs(target_crs)

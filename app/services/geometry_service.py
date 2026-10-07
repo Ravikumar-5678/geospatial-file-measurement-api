@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from shapely.geometry import LineString, Point, Polygon
+from typing import Any
 
 
-def measure_feature(feature_id: int, geometry, geometry_type: str) -> dict:
-    """Return a measurement payload for a single feature using projected coordinates."""
-    geometry_type = geometry_type or geometry.geom_type
-    if geometry_type == "Point":
+def measure_feature(feature_id: int, geometry: Any, geometry_type: str | None = None) -> dict[str, Any]:
+    """Return measurement payload for a single geometry after projection to metres."""
+    geom_type = geometry_type or getattr(geometry, "geom_type", "Unknown")
+
+    if geom_type == "Point":
         return {
             "feature_id": feature_id,
-            "geometry_type": geometry_type,
+            "geometry_type": geom_type,
             "measurement": None,
             "unit": None,
             "area": None,
@@ -17,33 +18,33 @@ def measure_feature(feature_id: int, geometry, geometry_type: str) -> dict:
             "message": None,
         }
 
-    if geometry_type in {"Polygon", "MultiPolygon"}:
-        area_value = float(geometry.area)
+    if geom_type in {"Polygon", "MultiPolygon"}:
+        value = float(geometry.area)
         return {
             "feature_id": feature_id,
-            "geometry_type": geometry_type,
-            "measurement": area_value,
+            "geometry_type": geom_type,
+            "measurement": value,
             "unit": "m²",
-            "area": area_value,
+            "area": value,
             "length": None,
             "message": None,
         }
 
-    if geometry_type in {"LineString", "MultiLineString"}:
-        length_value = float(geometry.length)
+    if geom_type in {"LineString", "MultiLineString"}:
+        value = float(geometry.length)
         return {
             "feature_id": feature_id,
-            "geometry_type": geometry_type,
-            "measurement": length_value,
+            "geometry_type": geom_type,
+            "measurement": value,
             "unit": "m",
             "area": None,
-            "length": length_value,
+            "length": value,
             "message": None,
         }
 
     return {
         "feature_id": feature_id,
-        "geometry_type": geometry_type,
+        "geometry_type": geom_type,
         "measurement": None,
         "unit": None,
         "area": None,

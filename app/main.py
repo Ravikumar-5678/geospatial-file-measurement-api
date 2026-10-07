@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.files import router as files_router
 from app.database import init_db
-from app.api.files import router
 
 
 @asynccontextmanager
@@ -17,15 +17,23 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="Geospatial File Measurement API",
     version="1.0.0",
-    description="Upload geospatial KML and Shapefile ZIP files, extract features, and measure polygons and lines in metres.",
+    description=(
+        "Upload KML and Shapefile ZIP files, extract feature details, and compute "
+        "supported measurements using CRS-aware geospatial logic."
+    ),
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
 )
 
-app.include_router(router, prefix="/api")
+app.include_router(files_router, prefix="/api")
 
 
 @app.get("/health")
 def health_check() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/")
+def root() -> dict[str, str]:
+    return {"message": "Geospatial File Measurement API is running."}
